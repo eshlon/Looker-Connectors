@@ -2,4 +2,4 @@
 
 This connector enable users to import their marketing data from a CSV file to a RFM analysis report.
 please check this webpage for more information:
-htttps://shahabi.xyz/templates/rfm
+https://shahabi.xyz/templates/rfm
