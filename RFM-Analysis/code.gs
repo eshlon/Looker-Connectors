@@ -16,390 +16,380 @@ function getAuthType() {
 }
 
 
-function isAdminUser(){
+
+function isAdminUser() {
   return true;
 }
 
 
 function getConfig(request) {
+  var configParams = request.configParams;
+  var spreadsheet;
+
+  var isFirstStep = configParams === undefined;
   var config = cc.getConfig();
-  
-  config.setDateRangeRequired(false);
 
-  config
-    .newTextInput()
-    .setId('url')
-    .setName('Enter the URL of your CSV');
+  if (isFirstStep) {
+    config.setIsSteppedConfig(true);
+  }
 
-  config
-    .newSelectSingle()
-    .setId('delimiter')
-    .setName('Select the delimiter between each value')
-    .setAllowOverride(false)
-    .addOption(
-      config
-        .newOptionBuilder()
-        .setLabel('Comma')
-        .setValue(',')
-    )
-    .addOption(
-      config
-        .newOptionBuilder()
-        .setLabel('Semicolon')
-        .setValue(';')
-    )
-    .addOption(
-      config
-        .newOptionBuilder()
-        .setLabel('Tabulation')
-        .setValue('\t')
-    );
-
-  config
-    .newSelectSingle()
-    .setId('textQualifier')
-    .setName('Are the values surrounded by single or double quotes?')
-    .setAllowOverride(false)
-    .addOption(
-      config
-        .newOptionBuilder()
-        .setLabel('No Quotes')
-        .setValue('undefined')
-    )
-    .addOption(
-      config
-        .newOptionBuilder()
-        .setLabel('Single Quotes')
-        .setValue("'")
-    )
-    .addOption(
-      config
-        .newOptionBuilder()
-        .setLabel('Double Quotes')
-        .setValue('"')
-    );
+ // if (isFirstStep) {
+    // Step 1: Enter Google Sheets URL
+      var sheetUrl = config.newTextInput()
+      .setId("sheetUrl")
+      .setName("Google Sheets URL")
+      .setHelpText("Enter the URL of your Google Sheets spreadsheet")
+      .setPlaceholder("https://docs.google.com/spreadsheets/d/your-sheet-id/edit")
+      .setIsDynamic(true);
+  //}
 
 
 
-  //config.setDateRangeRequired(true); no need to add date in transfers currnetly
-  
+ if (!isFirstStep && configParams.sheetUrl) {
+
+    // Step 2: Select Sheet Name
+    spreadsheet = SpreadsheetApp.openByUrl(configParams.sheetUrl)
+    var sheets = spreadsheet.getSheets();
+    var sheetNames = sheets.map(function(sheet) {
+      return sheet.getName();
+    });
+
+    var sheetName = config.newSelectSingle()
+      .setId("sheetName")
+      .setName("Sheet Name")
+      .setHelpText("Choose the sheet that your sales data are stored")
+      .addOption(
+        config.newOptionBuilder()
+        .setLabel("Select a sheet")
+        .setValue("")
+        )
+      .setIsDynamic(true);
+    
+    sheetNames.forEach(function(name) {
+      sheetName.addOption(config.newOptionBuilder().setLabel(name).setValue(name));
+    });
+
+
+    if (!configParams.sheetName)
+    config.setIsSteppedConfig(true);
+
+    
+  }
+
+
+  if (!isFirstStep && configParams.sheetName) {
+    
+    // Step 3: Select Columns for ID, Price, and Date
+    var selectedSheet = spreadsheet.getSheetByName(configParams.sheetName);
+    var headers = selectedSheet.getRange(1, 1, 1, selectedSheet.getLastColumn()).getValues()[0];
+
+    var idColumn = config.newSelectSingle()
+      .setId("idColumn")
+      .setName("Customer ID Column")
+      .setHelpText("Choose the column that containes unique identifiers for each user; it can be users' email, ID, etc.")
+      .addOption(config.newOptionBuilder().setLabel("Select a column").setValue(""));
+    
+    var priceColumn = config.newSelectSingle()
+      .setId("amountColumn")
+      .setName("Amount Column")
+      .setHelpText("Choose the column that contains the amounts of sales")
+      .addOption(config.newOptionBuilder().setLabel("Select a column").setValue(""));
+    
+    var dateColumn = config.newSelectSingle()
+      .setId("dateColumn")
+      .setName("Date Column")
+      .setHelpText("Choose the column that contains dates of transactions")
+      .addOption(config.newOptionBuilder().setLabel("Select a column").setValue(""));
+
+    headers.forEach(function(header, index) {
+      idColumn.addOption(config.newOptionBuilder().setLabel(header).setValue(index ));
+      priceColumn.addOption(config.newOptionBuilder().setLabel(header).setValue(index));
+      dateColumn.addOption(config.newOptionBuilder().setLabel(header).setValue(index));
+    });
+  }
+
   return config.build();
 }
 
 
 
-function findLineSeparator(content) {
-  if (!content) {
-    return undefined;
-  }
-  if (content.indexOf('\r\n') >= 0) {
-    // Windows
-    return '\r\n';
-  } else if (content.indexOf('\r') >= 0) {
-    // MacOS
-    return '\r';
-  } else if (content.indexOf('\n') >= 0) {
-    // Linux / OSX
-    return '\n';
-  } else {
-    return undefined;
-  }
-}
 
 
+function getFields(){
 
-function fetchData(url) {
-  if (!url || !url.match(/^https?:\/\/.+$/g)) {
-    sendUserError('"' + url + '" is not a valid url.');
-  }
-  var response = UrlFetchApp.fetch(url);
-  var content = response.getContentText();
-  if (!content) {
-    sendUserError('"' + url + '" returned no content.');
-  }
-  return content;
-}
-
-function getFields(request) {
   var cc = DataStudioApp.createCommunityConnector();
   var fields = cc.getFields();
   var types = cc.FieldType;
+  //var aggregations = cc.AggregationType;
 
   fields.newDimension()
-  .setId('uid')
-  .setType(types.TEXT)
-  .setName('User Identifier');
+    .setId('customer')
+    .setType(types.TEXT)
+    .setName('Customer');
+
 
   fields.newDimension()
-  .setId('rscore')
-  .setType(types.NUMBER)
-  .setName('Recency Score');
+    .setId('recency')
+    .setType(types.NUMBER)
+    .setName('Recency');
 
   fields.newDimension()
-  .setId('recency')
-  .setType(types.NUMBER)
-  .setName('Recency');
+    .setId('frequency')
+    .setType(types.NUMBER)
+    .setName('Frequency');
+  
+  fields.newDimension()
+    .setId('monetary')
+    .setType(types.NUMBER)
+    .setName('Monetary');
 
   fields.newDimension()
-  .setId('frequency')
-  .setType(types.NUMBER)
-  .setName('Frequency');
+    .setId('rscore')
+    .setType(types.NUMBER)
+    .setName('R Score');
 
   fields.newDimension()
-  .setId('fscore')
-  .setType(types.NUMBER)
-  .setName('Frequency Score');
+    .setId('fscore')
+    .setType(types.NUMBER)
+    .setName('F Score');
 
   fields.newDimension()
-  .setId('monetary')
-  .setType(types.NUMBER)
-  .setName('Monetary');
+    .setId('mscore')
+    .setType(types.NUMBER)
+    .setName('M Score');
 
   fields.newDimension()
-  .setId('labels')
-  .setType(types.TEXT)
-  .setName('Labels');
+    .setId('profile')
+    .setType(types.TEXT)
+    .setName('Profile');
 
 
   return fields;
-}
 
+
+}
 
 function getSchema(request) {
-  
-  var fields = getFields(request).build();
-  return {schema: fields};
+
+  return { schema: getFields().build() };
 }
 
 
-function setLabels(r_score,f_score)
-{
-  if (r_score<=2 && f_score <=2){
-    return "Hibernating";
+function generateSummary(request,requestedFields) {
+
+
+
+  var configParams = request.configParams;
+  //index of each input dimension
+  var c = configParams.idColumn;
+  var a = configParams.amountColumn;
+  var d = configParams.dateColumn ;
+
+
+  // Get the source sheet (Sheet1) and data range
+  var sourceSheet = SpreadsheetApp.openByUrl(configParams.sheetUrl).getSheetByName(configParams.sheetName);
+  var sourceRange = sourceSheet.getDataRange();
+
+  var sourceValues = sourceRange.getValues();
+
+  // Create a dictionary to store customer information
+  var customerData = {};
+
+
+  // Iterate through the data in Sheet1
+  for (var i = 1; i < sourceValues.length; i++) {
+    var customerId = sourceValues[i][c];
+    var purchaseDate = new Date(sourceValues[i][d]);
+    var purchaseAmount = sourceValues[i][a];
+
+    // Update customer data or create a new entry
+    if (customerData[customerId]) {
+      // Update Recency (days since the latest purchase)
+      var daysSinceLastPurchase = Math.floor((new Date() - purchaseDate) / (1000 * 60 * 60 * 24));
+      customerData[customerId].recency = Math.min(daysSinceLastPurchase, customerData[customerId].recency);
+
+      // Update Frequency (number of purchases)
+      customerData[customerId].frequency++;
+
+      // Update Monetary (total purchase amount)
+      customerData[customerId].monetary += purchaseAmount;
+    } else {
+      // Create a new entry for the customer
+      customerData[customerId] = {
+        recency: Math.floor((new Date() - purchaseDate) / (1000 * 60 * 60 * 24)),
+        frequency: 1,
+        monetary: purchaseAmount
+      };
+    }
   }
-  else if (r_score <= 2 && (f_score == 3 || f_score == 4)){
-    return "At Risk";
+
+  // Calculate Recency, Frequency, and Monetary scores
+  var recencyScores = calculateScores(getValuesArray(customerData, 'recency'),false);
+  var frequencyScores = calculateScores(getValuesArray(customerData, 'frequency'),true);
+  var monetaryScores = calculateScores(getValuesArray(customerData, 'monetary'),true);
+
+  // Create an array for the data to be written to Sheet2
+  //var summaryData = {"values":['uid', 'recency', 'frequency', 'monetary', 'rscore', 'fscore', 'mscore' , 'segment']};
+  var summaryData = [];
+
+
+  // Populate the summary data array
+  for (var customerId in customerData) {
+    var requestedRow = [];
+    var customerInfo = customerData[customerId];
+    var rScore = recencyScores[customerInfo.recency];
+    var fScore = frequencyScores[customerInfo.frequency];
+    var mScore = monetaryScores[customerInfo.monetary];
+    var profile = getProfileLabel(rScore, fScore);
+
+    requestedFields.asArray().map(function(requestedField) {
+    switch (requestedField.getId()) {
+
+      case 'customer':
+        return requestedRow.push(customerId);
+      
+      case 'recency':
+        return requestedRow.push(customerInfo.recency);
+      
+      case 'frequency':
+        return requestedRow.push(customerInfo.frequency);
+        
+      case 'monetary':
+        return requestedRow.push(customerInfo.monetary);
+        
+      case 'rscore':
+        return requestedRow.push(rScore);
+        
+      case 'fscore':
+        return requestedRow.push(fScore);
+        
+      case 'mscore':
+        return requestedRow.push(mScore);
+        
+      case 'profile':
+        return requestedRow.push(profile);
+
+      default:
+        return '';    
+
+    }
+    });
+
+    summaryData.push({values:requestedRow});
+  
   }
-  else if (r_score <= 2 && f_score == 5){
-    return "Can't Lose Them";
-  }
-  else if (r_score == 3 && f_score <= 2){
-    return "About to Sleep";
-  }
-  else if (r_score == 3 && f_score == 3){
-    return "Need Attention";
-  }
-  else if ((r_score == 3 || r_score == 4) && (f_score == 4 || f_score == 5)){
-    return "Loyal Customers";
-  }
-  else if (r_score == 4 && f_score == 1){
-    return "Promissing";
-  }
-  else if (r_score == 5 && f_score == 1){
-    return "New Customers";
-  }
-  else if (r_score >= 4 && (f_score == 2 || f_score == 3)){
-    return "Potential Loyalities";
-  }
-  else if (r_score == 5 &&  (f_score == 4 || f_score == 5)){
-    return "Champions";
+
+
+  
+
+
+  return summaryData;
+
+  
+  
+}
+
+function getValuesArray(data, key) {
+  return Object.keys(data).map(function(customerId) {
+    return data[customerId][key];
+  });
+}
+
+function calculateScores(values,mode) {
+
+  if(mode) // true for ascending scoring ( higher amounts equal to higher score) and false for descending scoring ( lesser the value, higher the score)
+  {
+    var sortedValues = values.slice().sort(function(a, b) {
+      return a - b;
+    });
   }
   else{
-    sendUserError('Scores are not correct. R-Score: '+r_score+' F-Score: '+f_score);
-  }
-    
+      var sortedValues = values.slice().sort(function(a, b) {
+      return b - a;
+    });
 
+  }
+
+
+  var scoreMap = {};
+  var scoreIncrement = Math.ceil(sortedValues.length / 5);
+
+  for (var i = 0; i < sortedValues.length; i++) {
+    var score = Math.ceil((i + 1) / scoreIncrement);
+    scoreMap[sortedValues[i]] = score;
+  }
+
+  return scoreMap;
 }
 
-
-function rfmCalculate(userID,tdate,tfee,requestedFields)
-{
-  var now = new Date();
-
-
-  // unique IDs from transactions
-  var uniqueIds = userID.filter(function(value,index,array){
-    return array.indexOf(value) === index;
-  });
-
-
-  var monetary = []; // Monetary Field
-
-  // finding the latest date of every user's transaction + Summation of Monetary field. problem: N^2
-  var filteredDates = uniqueIds.map(function(value,index,array){
-    var allDates=[];
-    var allFees = 0;
-
-    for(let i=0; i<userID.length;i++)
-    {
-      if(userID[i] == value)
-      {
-        allDates.push(new Date(tdate[i]));
-        allFees += parseInt(tfee[i]);
-      }
-    }
-
-    monetary.push(allFees);
-    var maxDate = Math.max.apply(null,allDates);
-    return maxDate;
-
-  });
-
-
-  var reccency = filteredDates.map(x => Math.round((now.getTime()- new Date(x).getTime())/(1000*3600*24)));
-  
-  // counting each unique ID in transactions
-  var frequency = uniqueIds.map(function(value,index,array){
-
-    return userID.filter(function(v){
-      return v == value;
-    }).length ;
-
-  });
+function getProfileLabel(rScore, fScore) {
+  // Define the labels based on R and F scores
+  var labels = {
+  1: {
+    1: "Hibernating",
+    2: "Hibernating",
+    3: "At Risk",
+    4: "At Risk",
+    5: "Can't Lose Them"
+  },
+  2: {
+    1: "Hibernating",
+    2: "Hibernating",
+    3: "At Risk",
+    4: "At Risk",
+    5: "Can't Lose Them"
+  },
+  3: {
+    1: "About to Sleep",
+    2: "About to Sleep",
+    3: "Need Attention",
+    4: "Loyal Customers",
+    5: "Loyal Customers"
+  },
+  4: {
+    1: "Promising",
+    2: "Potential Loyalities",
+    3: "Potential Loyalities",
+    4: "Loyal Customers",
+    5: "Loyal Customers"
+  },
+  5: {
+    1: "New Customers",
+    2: "Potential Loyalities",
+    3: "Potential Loyalities",
+    4: "Champions",
+    5: "Champions"
+  }
+  };
 
 
-  // f-score formula to map frequenct to 1-5 scale
-  var freqMin = Math.min.apply(null,frequency);
-  var freqMax = Math.max.apply(null,frequency);
-  var freqRange = freqMax - freqMin;
-  var f_score = frequency.map(function(value){
-    var score;
-    if (value !== freqMin){
-      score = Math.ceil((value-freqMin)/freqRange*5); // new scale of 1-5
-    }else
-    {
-      score = 1; // 1 for the min value, avoiding formula to generate 0
-    }
-    return score; 
-  })
-
-  // r-score formula to map frequenct to 1-5 scale
-  var recMin = Math.min.apply(null,reccency);
-  var recMax = Math.max.apply(null,reccency);
-  var recRange = recMax - recMin;
-  var r_score = reccency.map(function(value){
-    var score;
-    if (value !== recMax){
-      score = Math.ceil((recMax - value)/recRange*5); // new scale of 1-5
-    }
-    else{
-      score = 1; // 1 for the min value, avoiding formula to generate 0
-    }
-    return score; 
-  })
-
-
-  
-  var rows = uniqueIds.map(function(value,index){
-
-    var currentRow = [];
-    requestedFields.asArray().forEach(function(field){
-
-      switch (field.getId()) {
-        case 'uid':
-          return currentRow.push(value);;
-        case 'rscore':
-          return currentRow.push(r_score[index]);
-        case 'fscore':
-          return currentRow.push(f_score[index]);
-        case 'monetary':
-          return currentRow.push(monetary[index]);
-        case 'recency':
-          return currentRow.push(reccency[index]);
-        case 'frequency':
-          return currentRow.push(frequency[index]);
-        case 'labels':
-          return currentRow.push(setLabels(r_score[index],f_score[index]));
-        default:
-          return currentRow.push('');
-      }
-     });
-
-     return {values: currentRow};
-  });
-  
-  return rows;  
-
+  // Return the label based on R and F scores
+  return labels[rScore][fScore] || 'Unknown';
 }
 
 
 function getData(request) {
 
-  var content = fetchData(request.configParams.url);
-  var requestedFieldIds = request.fields.map(function(field) {
+  var requestedFieldIds = request.fields.map(function (field) {
     return field.name;
   });
   var requestedFields = getFields().forIds(requestedFieldIds);
+  
+  console.log(requestedFields.build());
 
 
-
-  var textQualifier = request.configParams.textQualifier;//'undefined'
-  var delimiter = request.configParams.delimiter;//','
-
-  var lineSeparator = findLineSeparator(content);
-  var contentRows;
-  if (lineSeparator) {
-    contentRows = content.split(lineSeparator);
-  } else {
-    contentRows = [content];
-  }
-
-  var valueSeparator = delimiter;
-  if (textQualifier !== 'undefined') {
-    valueSeparator = textQualifier + valueSeparator + textQualifier;
-  }
-
-  var userID = [];
-  var tdate = [];
-  var tfee = [];
-
-  var userIDIndex = 0;
-  var tdateIndex = 0;
-  var tfeeIndex = 0;
+  var data = generateSummary(request,requestedFields);
 
   
-
-  contentRows
-    .filter(function(contentRow) {
-      // Remove rows that are empty.
-      return contentRow.trim() !== '';
-    })
-    .map(function(contentRow, idx) {
-      if (textQualifier !== 'undefined') {
-        contentRow = contentRow.substring(1, contentRow.length - 1);
-      }
-      var allValues = contentRow.split(valueSeparator);
-
-      if(idx !=0) // for the Header row, search and set the index of required fields; for other rows, add each value to relevent array
-      {
-        userID.push(allValues[userIDIndex]);
-        tdate.push(allValues[tdateIndex]);
-        tfee.push(allValues[tfeeIndex]);
-      }
-      else
-      {
-        for ( var i = 0 ; i < 3 ; i++)
-        {
-          if(allValues[i] == 'ID')userIDIndex = i;
-          if(allValues[i] == 'date')tdateIndex = i;
-          if(allValues[i] == 'fee')tfeeIndex = i;
-
-        }
-      }
-      return ;
-     
-    });
-
-  var rows = rfmCalculate(userID,tdate,tfee,requestedFields);
-
+  
 
   var result = {
     schema: requestedFields.build(),
-    rows: rows
+    rows: data
   };
 
+  
+
   return result;
+  
 }
-
-
-
